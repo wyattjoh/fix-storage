@@ -17,6 +17,8 @@ See [README.md](README.md) for the user-facing interface.
 | Lint       | `bun run lint`             |
 | Format     | `bun run format`           |
 | Everything | `just check`               |
+| Demo       | `bun run demo`             |
+| Record     | `just record`              |
 
 ## Layout
 
@@ -33,6 +35,8 @@ See [README.md](README.md) for the user-facing interface.
 | `src/ui/bar.ts`          | Pure bar layout (braille dot cells, ripple) and easing                       |
 | `src/ui/app.tsx`         | The OpenTUI screen and the key map (`handleKey`)                             |
 | `src/main.tsx`           | Arg parsing, renderer lifecycle                                              |
+| `scripts/demo.tsx`       | The UI over a made-up disk, for recordings; not published                    |
+| `docs/`                  | README media and the VHS tape that records them (`just record`)              |
 
 ## The safety model
 

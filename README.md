@@ -2,17 +2,31 @@
 
 See what is filling your Mac's disk, find the culprit, and clear what is safe to clear, from the terminal.
 
+![fix-storage scanning a disk, opening a folder, jumping to its culprit and clearing caches](docs/fix-storage-demo.gif)
+
+## Run it
+
 ```sh
 bunx @wyattjoh/fix-storage
 ```
 
-No installer script, no global install, no background downloads. It needs macOS, [Bun](https://bun.sh) and [dust](https://github.com/bootandy/dust) (`brew install dust` or `mise use -g dust`), which measures the folders.
+No installer script, no global install, no background downloads. It needs:
+
+- macOS
+- [Bun](https://bun.sh) 1.2 or newer
+- [dust](https://github.com/bootandy/dust), which measures the folders: `brew install dust` or `mise use -g dust`
+
+A full scan takes a minute or two on a well-used disk. Everything you open after that comes from the scan, so browsing is instant.
 
 ## What it shows
 
 - The disk as a bar, one colored segment per category: Apps, Developer, Photos, Movies, Documents, Music, System data, Caches and Trash. It grows as the scan measures and shrinks as you clear.
 - Each category's biggest folders and files, labelled `junk` (rebuilds itself or is a leftover), `unused` (probably not needed any more) or `system` (a tool or macOS owns it), with when each was last opened.
 - For a big folder, where its space actually is ("mostly in a/b/model.bin, 31 GB · 77%"), and a key that walks straight there.
+
+| Browse into a folder and see where its space is                                         | Clear caches with two presses                                                     |
+| --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| ![The projects folder, with ml-experiments mostly a single model file](docs/browse.png) | ![Caches being cleared, the bar shrinking as each folder goes](docs/clearing.png) |
 
 ## Keys
 
@@ -49,6 +63,18 @@ Without a terminal (piped output), it prints the text summary.
 
 macOS hides some folders (Mail, Messages, the Trash itself) from apps without Full Disk Access. They show as unreadable and count toward System data. Give your terminal Full Disk Access in System Settings › Privacy & Security to include them.
 
-## Credit
+## Development
 
-A macOS-only port of [govijr/fix-storage](https://github.com/govijr/fix-storage) (MIT). The scan, classification and safety rules come from it. The graphical renderer (a hidden Electron that draws into the terminal) is replaced with [OpenTUI](https://github.com/anomalyco/opentui), so it runs straight from `bunx`.
+```sh
+bun install
+bun run dev       # the real app, on your disk
+bun run demo      # the same UI over a made-up disk; reads and deletes nothing
+just check        # format, lint, typecheck, tests
+just record       # re-record the GIF and stills in docs/ (needs vhs, ttyd, ffmpeg)
+```
+
+There is no build step: the TypeScript in `src/` is what gets published, and Bun runs it directly.
+
+## Credit and license
+
+MIT, see [LICENSE](LICENSE). A macOS-only port of [govijr/fix-storage](https://github.com/govijr/fix-storage) (MIT). The scan, classification and safety rules come from it. The graphical renderer (a hidden Electron that draws into the terminal) is replaced with [OpenTUI](https://github.com/anomalyco/opentui), so it runs straight from `bunx`.

@@ -2,7 +2,22 @@
   "name": "@wyattjoh/fix-storage",
   "version": "0.1.0",
   "description": "See what is filling your Mac's disk, find the culprit, and clear what is safe to clear, from the terminal.",
+  "keywords": [
+    "bun",
+    "cleanup",
+    "cli",
+    "disk",
+    "disk-usage",
+    "macos",
+    "storage",
+    "tui"
+  ],
+  "homepage": "https://github.com/wyattjoh/fix-storage#readme",
+  "bugs": {
+    "url": "https://github.com/wyattjoh/fix-storage/issues"
+  },
   "license": "MIT",
+  "author": "Wyatt Johnson",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/wyattjoh/fix-storage.git"
@@ -29,7 +44,8 @@
     "typecheck": "tsc --noEmit",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "lint": "oxlint"
+    "lint": "oxlint",
+    "demo": "HOME=/Users/you bun scripts/demo.tsx"
   },
   "dependencies": {
     "@opentui/core": "0.9.7",
