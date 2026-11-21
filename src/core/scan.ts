@@ -236,6 +236,64 @@ export async function dust(
 }
 
 /**
+ * Folder sizes measured so far, by path. The scan records every folder dust
+ * reports under each unit, so opening one later is instant instead of
+ * measuring it again.
+ */
+const known = new Map<string, number>();
+
+/**
+ * A remembered size for a folder, if anything measured it.
+ */
+export function knownSize(path: string): number | undefined {
+  return known.get(path);
+}
+
+/**
+ * Remembers the size of every folder in a dust tree.
+ */
+export function rememberTree(node: DustNode): void {
+  known.set(node.name, dustBytes(node.size));
+  for (const child of node.children) rememberTree(child);
+}
+
+/**
+ * Drops remembered sizes for a path, everything inside it, and every folder above it.
+ */
+export function forgetSizes(path: string): void {
+  for (const key of known.keys()) {
+    if (key === path || key.startsWith(path + "/") || path.startsWith(key + "/")) known.delete(key);
+  }
+}
+
+/**
+ * Drops every remembered size, before a rescan.
+ */
+export function forgetAllSizes(): void {
+  known.clear();
+}
+
+/**
+ * How many levels below each scanned folder the scan remembers sizes for.
+ * Deeper costs dust almost nothing (it walks everything anyway) but grows the output.
+ */
+const REMEMBER_DEPTH = 5;
+
+/**
+ * Measures a folder and remembers the sizes of the folders inside it, down to REMEMBER_DEPTH.
+ */
+export async function measureAndRemember(path: string, children: Children): Promise<FolderSize> {
+  const { tree, denied } = await dust(
+    path,
+    ["-D", "-d", String(REMEMBER_DEPTH), "-n", "1000000"],
+    children,
+  );
+  if (!tree) return { bytes: 0, denied };
+  rememberTree(tree);
+  return { bytes: dustBytes(tree.size), denied };
+}
+
+/**
  * Disk usage of one whole folder, which dust measures far faster than walking it in JS.
  */
 export async function folderSize(path: string, children: Children): Promise<FolderSize> {
@@ -364,7 +422,7 @@ export function startScan(
         if (!unit) return;
         snap.current = unit.path;
         emit();
-        const result = await folderSize(unit.path, children);
+        const result = await measureAndRemember(unit.path, children);
         if (cancelled) return;
         add(unit.category, result.bytes);
         if (result.bytes > 0)

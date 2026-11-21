@@ -2,7 +2,14 @@ import { promises as fsp } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type { CategoryId, Root } from "./categories";
 import { isWhole, type Usage } from "./classify";
-import { dust, dustBytes, folderSize, type Children, type DustNode, type Item } from "./scan";
+import {
+  dust,
+  knownSize,
+  measureAndRemember,
+  rememberTree,
+  type Children,
+  type Item,
+} from "./scan";
 
 /**
  * A running listing or culprit search.
@@ -11,27 +18,7 @@ export interface ListHandle {
   cancel(): void;
 }
 
-/**
- * Folder sizes measured on the way to a culprit. Opening one of those folders
- * later reuses them instead of measuring again, so diving in is instant.
- */
-const known = new Map<string, number>();
-
-/**
- * Drops remembered sizes for a path, everything inside it, and every folder above it.
- */
-export function forgetSizes(path: string): void {
-  for (const key of known.keys()) {
-    if (key === path || key.startsWith(path + "/") || path.startsWith(key + "/")) known.delete(key);
-  }
-}
-
-/**
- * Drops every remembered size, before a rescan.
- */
-export function forgetAllSizes(): void {
-  known.clear();
-}
+export { forgetAllSizes, forgetSizes } from "./scan";
 
 /**
  * Signature of a folder lister, so the UI can be driven by fakes in tests.
@@ -85,7 +72,7 @@ export function listFolder(
       while (!cancelled && next < folders.length) {
         const folder = folders[next++];
         if (!folder) return;
-        const bytes = known.get(folder) ?? (await folderSize(folder, children)).bytes;
+        const bytes = knownSize(folder) ?? (await measureAndRemember(folder, children)).bytes;
         if (cancelled) return;
         items.push({ path: folder, size: bytes, dir: true });
         onUpdate(sorted(), false, folder);
@@ -197,12 +184,14 @@ export function findCulprit(path: string, onDone: (culprit: Culprit) => void): L
     const { tree } = await dust(path, ["-D", "-d", String(DEPTH), "-n", "2000"], children);
     if (cancelled) return;
     const sizes = new Map<string, number>();
-    const visit = (node: DustNode) => {
-      sizes.set(node.name, dustBytes(node.size));
-      node.children.forEach(visit);
-    };
-    if (tree) visit(tree);
-    for (const [dir, bytes] of sizes) known.set(dir, bytes);
+    if (tree) {
+      rememberTree(tree);
+      const visit = (node: typeof tree) => {
+        sizes.set(node.name, knownSize(node.name) ?? 0);
+        node.children.forEach(visit);
+      };
+      visit(tree);
+    }
 
     const { chain, bottom, bottomSize, kids } = culpritFrom(path, sizes);
     // A single huge file at the bottom (a video, a disk image) is the real answer.

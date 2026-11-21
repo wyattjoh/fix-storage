@@ -8,6 +8,7 @@ import {
   startScan,
   type ScanSnapshot,
   dustBytes,
+  knownSize,
 } from "../src/core/scan";
 import { toJson, toText } from "../src/plain";
 import { diskSegments } from "../src/ui/bar";
@@ -98,4 +99,18 @@ test("dust sizes parse as whole bytes", () => {
   expect(dustBytes("311296B")).toBe(311296);
   expect(dustBytes("0B")).toBe(0);
   expect(dustBytes("")).toBe(0);
+});
+
+test("a scan remembers the sizes of folders below what it measured", async () => {
+  const root = await fs.mkdtemp(join(tmpdir(), "fix-storage-remember-"));
+  try {
+    await fs.mkdir(join(root, "project/src/deep"), { recursive: true });
+    await fs.writeFile(join(root, "project/src/deep/big.bin"), Buffer.alloc(200_000, 1));
+    const handle = startScan([{ path: root, category: "documents", hidden: undefined }], () => {});
+    await handle.done;
+    expect(knownSize(join(root, "project"))).toBeGreaterThanOrEqual(200_000);
+    expect(knownSize(join(root, "project/src/deep"))).toBeGreaterThanOrEqual(200_000);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });
