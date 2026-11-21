@@ -1,6 +1,9 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+/**
+ * What a measured folder counts toward.
+ */
 export type CategoryId =
   | "apps"
   | "developer"
@@ -19,8 +22,14 @@ export type CategoryId =
  */
 export type Tier = "safe" | "review" | "keep";
 
+/**
+ * A color as red, green and blue, 0 to 255.
+ */
 export type Rgb = [number, number, number];
 
+/**
+ * A category of disk usage, how it is drawn, and how freely it may be cleared.
+ */
 export interface Category {
   id: CategoryId;
   name: string;
@@ -29,7 +38,9 @@ export interface Category {
   blurb: string;
 }
 
-/** Order is the order of segments in the bar and of the legend, row by row. */
+/**
+ * Order is the order of segments in the bar and of the legend, row by row.
+ */
 export const CATEGORIES: Category[] = [
   {
     id: "apps",
@@ -96,22 +107,35 @@ export const CATEGORIES: Category[] = [
   },
 ];
 
+/**
+ * Categories by id.
+ */
 export const CATEGORY: Record<CategoryId, Category> = Object.fromEntries(
   CATEGORIES.map((c) => [c.id, c]),
 ) as Record<CategoryId, Category>;
 
+/**
+ * How each tier is named on screen.
+ */
 export const TIER_LABEL: Record<Tier, string> = {
   safe: "Safe to clear",
   review: "Review first",
   keep: "Keep",
 };
 
+/**
+ * A folder the scan measures, and the category it counts toward.
+ */
 export interface Root {
   path: string;
-  /** System data is otherwise whatever the disk reports beyond what was measured; a system root lists where some of it is. */
+  /**
+   * System data is otherwise whatever the disk reports beyond what was measured; a system root lists where some of it is.
+   */
   category: CategoryId;
-  /** Category for the dot-folders directly inside this root, when it differs. */
-  hidden?: CategoryId;
+  /**
+   * Category for the dot-folders directly inside this root, when it differs.
+   */
+  hidden: CategoryId | undefined;
 }
 
 /**
@@ -122,61 +146,72 @@ export interface Root {
  */
 export function roots(home: string = homedir()): Root[] {
   const h = (...parts: string[]) => join(home, ...parts);
+  const r = (
+    path: string,
+    category: CategoryId,
+    hidden: CategoryId | undefined = undefined,
+  ): Root => ({
+    path,
+    category,
+    hidden,
+  });
   return [
-    { path: "/Applications", category: "apps" },
-    { path: h("Applications"), category: "apps" },
+    r("/Applications", "apps"),
+    r(h("Applications"), "apps"),
     // Everything else apps keep: Application Support, Containers, Mail and so on.
-    { path: h("Library"), category: "apps" },
+    r(h("Library"), "apps"),
     // Listed on their own so each app's folder is measured separately.
-    { path: h("Library/Application Support"), category: "apps" },
-    { path: h("Library/Containers"), category: "apps" },
-    { path: h("Library/Group Containers"), category: "apps" },
-    { path: "/Library/Application Support", category: "apps" },
+    r(h("Library/Application Support"), "apps"),
+    r(h("Library/Containers"), "apps"),
+    r(h("Library/Group Containers"), "apps"),
+    r("/Library/Application Support", "apps"),
 
-    { path: h("Library/Developer"), category: "developer" },
-    { path: h("Library/Containers/com.docker.docker"), category: "developer" },
-    { path: h(".docker"), category: "developer" },
-    { path: h(".cargo"), category: "developer" },
-    { path: h(".rustup"), category: "developer" },
-    { path: h("go"), category: "developer" },
-    { path: h(".gradle"), category: "developer" },
-    { path: h(".m2"), category: "developer" },
-    { path: h(".nvm"), category: "developer" },
-    { path: h(".pyenv"), category: "developer" },
-    { path: h(".android"), category: "developer" },
-    { path: h(".bun"), category: "developer" },
-    { path: "/opt/homebrew", category: "developer" },
-    { path: "/usr/local", category: "developer" },
-    { path: "/Library/Developer", category: "developer" },
+    r(h("Library/Developer"), "developer"),
+    r(h("Library/Containers/com.docker.docker"), "developer"),
+    r(h(".docker"), "developer"),
+    r(h(".cargo"), "developer"),
+    r(h(".rustup"), "developer"),
+    r(h("go"), "developer"),
+    r(h(".gradle"), "developer"),
+    r(h(".m2"), "developer"),
+    r(h(".nvm"), "developer"),
+    r(h(".pyenv"), "developer"),
+    r(h(".android"), "developer"),
+    r(h(".bun"), "developer"),
+    r("/opt/homebrew", "developer"),
+    r("/usr/local", "developer"),
+    r("/Library/Developer", "developer"),
 
-    { path: h("Pictures"), category: "photos" },
-    { path: h("Movies"), category: "movies" },
+    r(h("Pictures"), "photos"),
+    r(h("Movies"), "movies"),
 
-    { path: h("Documents"), category: "documents" },
-    { path: h("Desktop"), category: "documents" },
-    { path: h("Downloads"), category: "documents" },
-    { path: h("Library/Mobile Documents"), category: "documents" },
-    { path: h("Library/CloudStorage"), category: "documents" },
-    { path: "/Users/Shared", category: "documents" },
+    r(h("Documents"), "documents"),
+    r(h("Desktop"), "documents"),
+    r(h("Downloads"), "documents"),
+    r(h("Library/Mobile Documents"), "documents"),
+    r(h("Library/CloudStorage"), "documents"),
+    r("/Users/Shared", "documents"),
     // The rest of the home folder: project folders count as your files, and
     // dot-folders (~/.vscode, ~/.ollama, ...) as developer tooling.
-    { path: home, category: "documents", hidden: "developer" },
+    r(home, "documents", "developer"),
 
-    { path: h("Music"), category: "music" },
+    r(h("Music"), "music"),
 
-    { path: h("Library/Caches"), category: "caches" },
-    { path: h(".cache"), category: "caches" },
-    { path: h(".npm"), category: "caches" },
-    { path: h("Library/Developer/Xcode/DerivedData"), category: "caches" },
-    { path: h("Library/Developer/CoreSimulator/Caches"), category: "caches" },
-    { path: h(".bun/install/cache"), category: "caches" },
-    { path: h(".gradle/caches"), category: "caches" },
+    r(h("Library/Caches"), "caches"),
+    r(h(".cache"), "caches"),
+    r(h(".npm"), "caches"),
+    r(h("Library/Developer/Xcode/DerivedData"), "caches"),
+    r(h("Library/Developer/CoreSimulator/Caches"), "caches"),
+    r(h(".bun/install/cache"), "caches"),
+    r(h(".gradle/caches"), "caches"),
 
-    { path: h(".Trash"), category: "trash" },
+    r(h(".Trash"), "trash"),
   ];
 }
 
-/** The categories this tool is willing to clear, in the order it suggests them. */
+/**
+ * The categories this tool is willing to clear, in the order it suggests them.
+ */
 export const CLEARABLE: Clearable[] = ["caches", "trash"];
 
 /**

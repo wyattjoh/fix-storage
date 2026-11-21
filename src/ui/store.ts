@@ -162,6 +162,11 @@ export interface Deps {
    */
   confirmMs: number;
   /**
+   * A second press sooner than this after arming is ignored, so key repeat
+   * from a held key cannot confirm on terminals that do not flag repeats.
+   */
+  confirmGuardMs: number;
+  /**
    * Delay before fetching dates and culprits for what came on screen.
    */
   enrichMs: number;
@@ -186,6 +191,7 @@ export function liveDeps(home: string = homedir()): Deps {
     deleteForGood,
     reveal,
     confirmMs: 4000,
+    confirmGuardMs: 300,
     enrichMs: 120,
   };
 }
@@ -230,6 +236,7 @@ export class Store {
   private scanHandle: ScanHandle | null = null;
   private listHandle: ListHandle | null = null;
   private confirmTimer: ReturnType<typeof setTimeout> | null = null;
+  private armedAt = 0;
   private enrichTimer: ReturnType<typeof setTimeout> | null = null;
   private culpritHandle: ListHandle | null = null;
   private culpritQueue: Item[] = [];
@@ -503,7 +510,7 @@ export class Store {
     this.openItem({ path: parent.path, size: parent.size, dir: true }, left.path);
   }
 
-  private openItem(item: Item, highlight?: string) {
+  private openItem(item: Item, highlight: string | undefined = undefined) {
     this.listHandle?.cancel();
     this.dropCulpritWork();
     this.clearConfirm();
@@ -560,6 +567,7 @@ export class Store {
       return;
     }
     if (state.confirm?.kind === "item" && state.confirm.path === item.path) {
+      if (this.tooSoon()) return;
       this.clearConfirm();
       void this.runRemove(item);
       return;
@@ -662,6 +670,7 @@ export class Store {
   press(id: Clearable): void {
     if (this.state.action || this.state.removing || this.state.scan.phase !== "done") return;
     if (this.state.confirm?.kind === "category" && this.state.confirm.id === id) {
+      if (this.tooSoon()) return;
       this.clearConfirm();
       void this.runClear(id);
       return;
@@ -671,8 +680,13 @@ export class Store {
 
   private arm(confirm: Confirm) {
     this.clearConfirm();
+    this.armedAt = Date.now();
     this.set({ confirm });
     this.confirmTimer = setTimeout(() => this.set({ confirm: null }), this.deps.confirmMs);
+  }
+
+  private tooSoon(): boolean {
+    return Date.now() - this.armedAt < this.deps.confirmGuardMs;
   }
 
   private clearConfirm() {

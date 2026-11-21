@@ -4,13 +4,13 @@ import { testRender } from "@opentui/react/test-utils";
 import type { Root } from "../src/core/categories";
 import type { CleanProgress } from "../src/core/clean";
 import { emptySnapshot, type Item, type ScanSnapshot } from "../src/core/scan";
-import { App } from "../src/ui/app";
+import { App, handleKey } from "../src/ui/app";
 import { Store, type Deps } from "../src/ui/store";
 
 const HOME = "/Users/test";
 const ROOTS: Root[] = [
-  { path: HOME + "/Library/Caches", category: "caches" },
-  { path: HOME + "/Documents", category: "documents" },
+  { path: HOME + "/Library/Caches", category: "caches", hidden: undefined },
+  { path: HOME + "/Documents", category: "documents", hidden: undefined },
 ];
 
 function finishedScan(): ScanSnapshot {
@@ -29,7 +29,10 @@ function finishedScan(): ScanSnapshot {
   return scan;
 }
 
-function fakeDeps(calls: { clean: Item[][]; removed: string[] }): Deps {
+function fakeDeps(
+  calls: { clean: Item[][]; removed: string[] },
+  overrides: Partial<Deps> = {},
+): Deps {
   return {
     home: HOME,
     roots: ROOTS,
@@ -58,7 +61,9 @@ function fakeDeps(calls: { clean: Item[][]; removed: string[] }): Deps {
     deleteForGood: async (path) => void calls.removed.push(path),
     reveal: async () => {},
     confirmMs: 60_000,
+    confirmGuardMs: 0,
     enrichMs: 60_000,
+    ...overrides,
   };
 }
 
@@ -169,4 +174,33 @@ test("q asks the app to quit", async () => {
   t.mockInput.pressKey("q");
   await Bun.sleep(5);
   expect(quit).toBe(1);
+});
+
+test("a held key's auto-repeat never confirms a removal", async () => {
+  const { store, calls, t } = await setup();
+  for (let i = 0; i < 7; i++) store.moveCategory(1);
+  expect(store.get().selected).toBe("caches");
+  t.mockInput.pressKey("c");
+  await Bun.sleep(5);
+  expect(store.get().confirm).toEqual({ kind: "category", id: "caches" });
+  // What the terminal sends while c is held down.
+  handleKey(store, "c", false, true);
+  handleKey(store, "c", false, true);
+  await Bun.sleep(5);
+  expect(calls.clean).toHaveLength(0);
+  expect(store.get().action).toBeNull();
+});
+
+test("a second press too soon after arming is ignored", async () => {
+  const calls = { clean: [] as Item[][], removed: [] as string[] };
+  const store = new Store(fakeDeps(calls, { confirmGuardMs: 300 }));
+  store.rescan();
+  await Bun.sleep(5);
+  store.select("caches");
+  store.press("caches");
+  store.press("caches");
+  await Bun.sleep(5);
+  expect(calls.clean).toHaveLength(0);
+  expect(store.get().confirm).toEqual({ kind: "category", id: "caches" });
+  store.stop();
 });

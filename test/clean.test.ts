@@ -12,8 +12,8 @@ let roots: Root[] = [];
 beforeEach(async () => {
   root = await fs.mkdtemp(join(tmpdir(), "fix-storage-clean-"));
   roots = [
-    { path: join(root, "Caches"), category: "caches" },
-    { path: join(root, "Documents"), category: "documents" },
+    { path: join(root, "Caches"), category: "caches", hidden: undefined },
+    { path: join(root, "Documents"), category: "documents", hidden: undefined },
   ];
   await fs.mkdir(join(root, "Caches", "com.app"), { recursive: true });
   await fs.writeFile(join(root, "Caches", "com.app", "blob"), Buffer.alloc(8192, 1));

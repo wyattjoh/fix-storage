@@ -10,16 +10,28 @@ import type { Item } from "./scan";
  */
 export type Verdict = "junk" | "unused" | "yours" | "system";
 
+/**
+ * When an item was last used.
+ */
 export interface Usage {
-  /** Milliseconds since epoch. */
+  /**
+   * Milliseconds since epoch.
+   */
   at: number;
-  /** "opened" when a last-opened date is known, "changed" when only the modification time is. */
+  /**
+   * "opened" when a last-opened date is known, "changed" when only the modification time is.
+   */
   kind: "opened" | "changed";
 }
 
+/**
+ * What an item probably is.
+ */
 export interface Label {
   verdict: Verdict;
-  /** Short, lowercase reason, e.g. "rebuilds with npm install". */
+  /**
+   * Short, lowercase reason, e.g. "rebuilds with npm install".
+   */
   reason: string;
 }
 
@@ -40,7 +52,9 @@ export function isWhole(path: string): boolean {
   );
 }
 
-/** "3 days", "7 months", "2 years". */
+/**
+ * "3 days", "7 months", "2 years".
+ */
 export function age(ms: number): string {
   const days = Math.max(0, Math.floor(ms / DAY));
   if (days < 1) return "today";
@@ -51,13 +65,17 @@ export function age(ms: number): string {
   return `${years} ${years === 1 ? "year" : "years"}`;
 }
 
-/** "today", "3 days ago". */
+/**
+ * "today", "3 days ago".
+ */
 export function ago(ms: number): string {
   const text = age(ms);
   return text === "today" ? "today" : `${text} ago`;
 }
 
-/** Compact age for a column: "3d", "7mo", "2y". */
+/**
+ * Compact age for a column: "3d", "7mo", "2y".
+ */
 export function shortAge(ms: number): string {
   const days = Math.max(0, Math.floor(ms / DAY));
   if (days < 1) return "today";
@@ -89,16 +107,20 @@ function idle(usage: Usage | undefined, now: number): number | null {
   return usage ? now - usage.at : null;
 }
 
-/** What a piece of System data is. macOS manages all of it. */
+/**
+ * What a piece of System data is. macOS manages all of it.
+ */
 function systemReason(): string {
   return "managed by macOS";
 }
 
-/** Decides what an item probably is, from its name, where it lives, and when it was last used. */
+/**
+ * Decides what an item probably is, from its name, where it lives, and when it was last used.
+ */
 export function classify(
   item: Item,
   category: CategoryId,
-  usage?: Usage,
+  usage: Usage | undefined = undefined,
   now: number = Date.now(),
 ): Label {
   const path = item.path;

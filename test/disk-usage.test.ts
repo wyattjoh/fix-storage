@@ -37,7 +37,7 @@ test("independent folder estimates can exceed filesystem usage during and after 
     await fs.link(join(root, "first", "example.bin"), join(root, "second", "example.bin"));
 
     statfs.mockResolvedValue(stats);
-    const roots = [{ path: root, category: "documents" as const }];
+    const roots = [{ path: root, category: "documents" as const, hidden: undefined }];
     const updates: ScanSnapshot[] = [];
     const scan = await startScan(roots, (update) => updates.push(update), {
       concurrency: 1,

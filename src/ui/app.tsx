@@ -95,12 +95,17 @@ const padStart = (text: string, w: number) =>
  */
 interface Chunk {
   t: string;
-  fg?: string | undefined;
-  bg?: string | undefined;
-  bold?: boolean | undefined;
+  fg: string | undefined;
+  bg: string | undefined;
+  bold: boolean;
 }
 
-const k = (t: string, fg?: string, bold?: boolean): Chunk => ({ t, fg, bold });
+const k = (t: string, fg: string | undefined = undefined, bold = false): Chunk => ({
+  t,
+  fg,
+  bg: undefined,
+  bold,
+});
 
 /**
  * Lays chunks into exactly w columns: the last ones are cut with an ellipsis, the rest padded.
@@ -119,7 +124,7 @@ function fitChunks(chunks: Chunk[], w: number): Chunk[] {
       left = 0;
     }
   }
-  if (left > 0) out.push({ t: " ".repeat(left) });
+  if (left > 0) out.push(k(" ".repeat(left)));
   return out;
 }
 
@@ -213,7 +218,7 @@ function cellsToChunks(cells: ReturnType<typeof barCells>): Chunk[] {
     const bg = hex(cell.bg);
     const prev = chunks[chunks.length - 1];
     if (prev && prev.fg === fg && prev.bg === bg) prev.t += cell.ch;
-    else chunks.push({ t: cell.ch, fg, bg });
+    else chunks.push({ t: cell.ch, fg, bg, bold: false });
   }
   return chunks;
 }
@@ -305,16 +310,25 @@ function Totals({ state, w }: { state: AppState; w: number }) {
 /**
  * Width of the categories column.
  */
-export const SIDEBAR = 44;
+export function sidebarWidth(cols: number): number {
+  return cols >= 110 ? 44 : 30;
+}
+
+/**
+ * Below this many columns the item list drops its bar and share columns.
+ */
+const COMPACT_LIST = 70;
 
 function CategoryLine({
   category,
   state,
   frame,
+  sw,
 }: {
   category: Category;
   state: AppState;
   frame: number;
+  sw: number;
 }) {
   const selected = state.selected === category.id;
   const focused = selected && state.pane === "sidebar";
@@ -327,42 +341,42 @@ function CategoryLine({
     : category.color;
   return (
     <Line
-      w={SIDEBAR}
+      w={sw}
       chunks={[
         k(focused ? "› " : selected ? "· " : "  ", selected ? hex(category.color) : FAINT, true),
         k("■ ", hex(color)),
         k(padEnd(category.name, 13), selected ? FG : SOFT, selected),
         k(padStart(gb(bytes), 9) + "  ", selected ? FG : MUTED),
-        ...miniBar(bytes / largest, 14, color),
+        ...(sw >= 44 ? miniBar(bytes / largest, 14, color) : []),
       ]}
     />
   );
 }
 
-function QuickWins({ state, store }: { state: AppState; store: Store }) {
+function QuickWins({ state, store, sw }: { state: AppState; store: Store; sw: number }) {
   if (state.scan.phase !== "done")
-    return <Line w={SIDEBAR} chunks={[k("  looking for space you can get back…", FAINT)]} />;
+    return <Line w={sw} chunks={[k("  looking for space you can get back…", FAINT)]} />;
   const ids = (["caches", "trash"] as Clearable[]).filter(
     (id) => store.canClear(id) || state.action?.id === id,
   );
   if (ids.length === 0)
-    return <Line w={SIDEBAR} chunks={[k("  nothing left that is safe to clear", FAINT)]} />;
+    return <Line w={sw} chunks={[k("  nothing left that is safe to clear", FAINT)]} />;
   const total = ids.reduce((sum, id) => sum + state.scan.sizes[id], 0);
   const busy = state.action !== null || state.removing !== null;
   return (
     <box flexDirection="column">
-      <Line w={SIDEBAR} chunks={[k("  "), k(gb(total), GREEN, true), k(" safe to clear", MUTED)]} />
+      <Line w={sw} chunks={[k("  "), k(gb(total), GREEN, true), k(" safe to clear", MUTED)]} />
       {ids.map((id) => {
         const armed = state.confirm?.kind === "category" && state.confirm.id === id;
         return (
           <Line
             key={id}
-            w={SIDEBAR}
+            w={sw}
             chunks={
               armed
                 ? [
                     k("  ■ ", hex(CATEGORY[id].color)),
-                    k(`c again: delete ${gb(state.scan.sizes[id])} for good`, RED, true),
+                    k(`c again to delete ${gb(state.scan.sizes[id])}`, RED, true),
                   ]
                 : [
                     k("  ■ ", hex(CATEGORY[id].color)),
@@ -382,21 +396,23 @@ function Categories({
   store,
   frame,
   h,
+  sw,
 }: {
   state: AppState;
   store: Store;
   frame: number;
   h: number;
+  sw: number;
 }) {
   const quick = 3;
   return (
-    <box flexDirection="column" width={SIDEBAR} height={h}>
-      <Line w={SIDEBAR} chunks={[k("  categories", state.pane === "sidebar" ? MUTED : FAINT)]} />
+    <box flexDirection="column" width={sw} height={h}>
+      <Line w={sw} chunks={[k("  categories", state.pane === "sidebar" ? MUTED : FAINT)]} />
       {CATEGORIES.map((category) => (
-        <CategoryLine key={category.id} category={category} state={state} frame={frame} />
+        <CategoryLine key={category.id} category={category} state={state} frame={frame} sw={sw} />
       ))}
       <box height={Math.max(0, h - CATEGORIES.length - 1 - quick)} />
-      <QuickWins state={state} store={store} />
+      <QuickWins state={state} store={store} sw={sw} />
     </box>
   );
 }
@@ -435,6 +451,11 @@ function culpritChunks(item: Item, culprit: Culprit, state: AppState, color: str
 const ROW_TAIL = 6 + 1 + 8 + 2 + 12 + 1 + 4 + 1 + 6;
 
 /**
+ * The same columns without the bar and share, for narrow terminals.
+ */
+const ROW_TAIL_COMPACT = 6 + 1 + 8 + 1 + 6;
+
+/**
  * The lines for one item: its row, and under the highlighted one what it is and what you can do.
  */
 function itemLines(
@@ -453,9 +474,10 @@ function itemLines(
   const verdict = VERDICT[label.verdict];
   const used = state.usage[item.path];
   const name = tidy(basename(item.path) || item.path) + (item.dir ? "/" : "");
-  const nameW = Math.max(8, w - 4 - ROW_TAIL);
+  const compact = w < COMPACT_LIST;
+  const nameW = Math.max(8, w - 4 - (compact ? ROW_TAIL_COMPACT : ROW_TAIL));
   const where = state.stack.length === 0 ? "  " + tilde(dirname(item.path)) : "";
-  const nameChunk = trunc(name, nameW);
+  const nameChunk = trunc(name, nameW - 1);
   const stale = used && Date.now() - used.at > 180 * 864e5;
   const barColor =
     label.verdict === "yours"
@@ -468,11 +490,15 @@ function itemLines(
       k(focused ? "› " : selected ? "· " : "  ", focused ? hex(category.color) : FAINT, true),
       k(item.dir ? "▸ " : "  ", item.dir ? hex(category.color) : FAINT),
       k(nameChunk, state.removing === item.path ? FAINT : selected ? FG : SOFT, selected),
-      k(padEnd(where, nameW - width(nameChunk)), FAINT),
+      k(padEnd(where, nameW - 1 - width(nameChunk)) + " ", FAINT),
       k(padEnd(verdict.tag, 6) + " ", verdict.text),
-      k(padStart(size(item.size), 8) + "  ", selected ? FG : MUTED),
-      ...miniBar((item.size / Math.max(1, max)) * grow, 12, barColor),
-      k(" " + padStart(pct(item.size, store.scopeSize()), 4), FAINT),
+      k(padStart(size(item.size), 8) + (compact ? "" : "  "), selected ? FG : MUTED),
+      ...(compact
+        ? []
+        : [
+            ...miniBar((item.size / Math.max(1, max)) * grow, 12, barColor),
+            k(" " + padStart(pct(item.size, store.scopeSize()), 4), FAINT),
+          ]),
       k(" " + padStart(used ? shortAge(Date.now() - used.at) : "", 6), stale ? AMBER : FAINT),
     ],
   ];
@@ -674,14 +700,21 @@ function BottomLine({ state, w }: { state: AppState; w: number }) {
   );
 }
 
+/**
+ * Keys that arm or confirm a removal.
+ */
+const DESTRUCTIVE = new Set(["c", "d", "backspace", "delete"]);
+
 // ---- keys ----------------------------------------------------------------------------
 
 /**
  * Applies one key to the store. Returns true when the app should quit.
  */
-export function handleKey(store: Store, name: string, ctrl: boolean): boolean {
+export function handleKey(store: Store, name: string, ctrl: boolean, repeated = false): boolean {
   if (ctrl && name === "c") return true;
   if (ctrl) return false;
+  // A held key auto-repeats; it must never stand in for the second press of a confirm.
+  if (repeated && DESTRUCTIVE.has(name)) return false;
   const state = store.get();
   if (name === "q") return true;
   if (name === "r") return (store.rescan(), false);
@@ -786,7 +819,7 @@ export function App({ store, onQuit }: { store: Store; onQuit: () => void }) {
   const frame = useSpinner(busy);
 
   useKeyboard((key) => {
-    if (handleKey(store, key.name, key.ctrl)) onQuit();
+    if (handleKey(store, key.name, key.ctrl, key.repeated === true)) onQuit();
   });
 
   const w = Math.max(40, cols - 4);
@@ -795,7 +828,8 @@ export function App({ store, onQuit }: { store: Store; onQuit: () => void }) {
     (state.scan.total > 0 && state.scan.measured > state.scan.used);
   const head = 1 + 1 + (measuredLine ? 1 : 0) + 2 + 1;
   const mainH = Math.max(CATEGORIES.length + 5, rows - 2 - head - 2);
-  const insideW = Math.max(20, w - SIDEBAR - 3);
+  const sw = sidebarWidth(cols);
+  const insideW = Math.max(20, w - sw - 3);
   const excess = state.scan.measured - state.scan.used;
 
   return (
@@ -825,7 +859,7 @@ export function App({ store, onQuit }: { store: Store; onQuit: () => void }) {
       <Meter state={state} w={w} />
       <Line w={w} chunks={[]} />
       <box flexDirection="row" height={mainH} gap={3}>
-        <Categories state={state} store={store} frame={frame} h={mainH} />
+        <Categories state={state} store={store} frame={frame} h={mainH} sw={sw} />
         <Inside state={state} store={store} w={insideW} h={mainH} />
       </box>
       <Line w={w} chunks={[]} />

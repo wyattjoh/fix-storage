@@ -52,7 +52,8 @@ const renderer = await createCliRenderer({
 let quitting = false;
 
 // Every way out stops the scan and restores the terminal before exiting.
-const quit = async (code = 0) => {
+// Errors print after the alternate screen is gone, so they stay visible.
+const quit = async (code = 0, error: unknown = undefined) => {
   if (quitting) return;
   quitting = true;
   store.stop();
@@ -60,20 +61,22 @@ const quit = async (code = 0) => {
     renderer.destroy();
     await renderer.closed;
   } finally {
+    if (error !== undefined) {
+      process.stderr.write(
+        `fix-storage: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
+    }
     process.exit(code);
   }
 };
 
 process.on("SIGTERM", () => void quit(143));
-process.on("uncaughtException", (error) => {
-  process.stderr.write(`fix-storage: ${error.message}\n`);
-  void quit(1);
-});
+process.on("uncaughtException", (error) => void quit(1, error));
+process.on("unhandledRejection", (error) => void quit(1, error));
 
 try {
   createRoot(renderer).render(<App store={store} onQuit={() => void quit(0)} />);
   store.rescan();
 } catch (error) {
-  await quit(1);
-  throw error;
+  await quit(1, error);
 }

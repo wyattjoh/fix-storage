@@ -47,6 +47,6 @@ This tool deletes things. Keep these properties when changing it:
 - `Store` takes a `Deps` object (`liveDeps()` for the real machine). UI tests in `test/app.test.tsx` drive real keys through `@opentui/react/test-utils` with fake deps, so they never touch the disk. Add new side effects to `Deps`, not as direct imports in the store.
 - The UI draws every row as one `<text>` of styled `<span>`s, sized and truncated by `fitChunks`, rather than relying on flex layout for columns. Widths are measured with `Bun.stringWidth`.
 - Animation only runs while something moves: `useSpinner`, `useEased` and `useAppear` pass `undefined` to `useAnimationTick` when idle, so an idle screen does not redraw.
-- Every `.tsx` file starts with `/** @jsxImportSource @opentui/react */`. Bun does not always apply the package's tsconfig when `bunx` runs the file from `node_modules`, and without the pragma JSX would resolve to React DOM.
+- Every `.tsx` file starts with `/** @jsxImportSource @opentui/react */`. Bun does not always apply the package's tsconfig when `bunx` runs the file from `node_modules`, and without the pragma JSX would resolve to React DOM. The pragma must stay on one line; it is the one exception to multi-line JSDoc.
 - `main.tsx` routes every exit through `quit()`, which stops the store and awaits `renderer.closed` before `process.exit`, so the terminal never stays in the alternate screen.
 - Prefer `| undefined` over `?` (`exactOptionalPropertyTypes` is on). Multi-line JSDoc on public exports.
