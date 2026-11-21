@@ -29,7 +29,7 @@ See [README.md](README.md) for the user-facing interface.
 | `src/core/clean.ts`      | Planning and running a category-wide clear                                   |
 | `src/plain.ts`           | `--plain` and `--json` output                                                |
 | `src/ui/store.ts`        | The app's state machine; every side effect goes through `Deps`               |
-| `src/ui/bar.ts`          | Pure bar layout (eighth-block cells) and easing                              |
+| `src/ui/bar.ts`          | Pure bar layout (braille dot cells, ripple) and easing                       |
 | `src/ui/app.tsx`         | The OpenTUI screen and the key map (`handleKey`)                             |
 | `src/main.tsx`           | Arg parsing, renderer lifecycle                                              |
 
