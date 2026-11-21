@@ -49,44 +49,82 @@ export interface Cell {
 }
 
 /**
- * Left-aligned partial blocks, from one eighth to seven eighths of a cell.
+ * Braille glyphs with both dot columns lit, by how many dot rows are lit from the bottom.
  */
-const EIGHTHS = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"];
+const FULL = ["⠀", "⣀", "⣤", "⣶", "⣿"];
 
 /**
- * Lays segments out across width cells at one-eighth-cell resolution. A cell
- * where one segment ends and the next begins draws the first as a partial
- * block over the second's color, so small categories still show.
+ * The same with only the left dot column lit, for a bar that ends mid-cell.
  */
-export function barCells(
+const LEFT = ["⠀", "⡀", "⡄", "⡆", "⡇"];
+
+/**
+ * How a dot bar row is drawn.
+ */
+export interface DotOptions {
+  /**
+   * Color of the unlit track.
+   */
+  track: Rgb;
+  /**
+   * Glyph drawn on the unlit track: a dotted baseline, or blank.
+   */
+  trackGlyph: string;
+  /**
+   * Background behind every cell.
+   */
+  bg: Rgb;
+  /**
+   * Animation frame for the ripple, or undefined for a still bar.
+   */
+  wave: number | undefined;
+}
+
+/**
+ * How many dot rows the ripple takes out of cell i at this frame: a dip that
+ * sweeps left to right across the lit part of the bar, then starts over.
+ */
+export function rippleDip(i: number, lit: number, wave: number | undefined): number {
+  if (wave === undefined || lit <= 0) return 0;
+  const span = lit + 6;
+  const crest = (((wave % span) + span) % span) - 3;
+  const d = Math.abs(i - crest);
+  return d === 0 ? 2 : d === 1 ? 1 : 0;
+}
+
+/**
+ * Lays segments out across width cells in braille dots, two dot columns per
+ * cell. A lit cell is a full block of dots; the ripple, when animating,
+ * lowers a few cells' dots as it passes.
+ */
+export function dotCells(
   segments: Array<{ fraction: number; color: Rgb }>,
   width: number,
-  empty: Rgb,
+  options: DotOptions,
 ): Cell[] {
-  const eighths = width * 8;
+  const halves = width * 2;
   const spans: Array<{ start: number; end: number; color: Rgb }> = [];
   let at = 0;
   for (const segment of segments) {
-    const length = Math.max(0, segment.fraction) * eighths;
+    const length = Math.max(0, segment.fraction) * halves;
     if (length <= 0) continue;
-    spans.push({ start: at, end: Math.min(eighths, at + length), color: segment.color });
+    spans.push({ start: at, end: Math.min(halves, at + length), color: segment.color });
     at += length;
   }
-  const colorAt = (pos: number): Rgb =>
-    spans.find((s) => pos >= s.start && pos < s.end)?.color ?? empty;
+  // A half-cell is lit when the bar covers at least half of it.
+  const colorAt = (half: number): Rgb | undefined =>
+    spans.find((s) => half + 0.5 >= s.start && half + 0.5 < s.end)?.color;
+  const lit = Math.ceil(Math.min(halves, at) / 2);
   const cells: Cell[] = [];
   for (let i = 0; i < width; i++) {
-    const left = colorAt(i * 8);
-    const right = colorAt(i * 8 + 7.999);
-    if (left === right) {
-      cells.push({ ch: left === empty ? " " : "█", fg: left, bg: empty });
+    const left = colorAt(i * 2);
+    const right = colorAt(i * 2 + 1);
+    if (!left) {
+      cells.push({ ch: options.trackGlyph, fg: options.track, bg: options.bg });
       continue;
     }
-    // How much of the cell the left color covers, in eighths.
-    const boundary =
-      spans.find((s) => s.color === left && s.end > i * 8 && s.end < (i + 1) * 8)?.end ?? i * 8 + 4;
-    const covered = Math.max(1, Math.min(7, Math.round(boundary - i * 8)));
-    cells.push({ ch: EIGHTHS[covered]!, fg: left, bg: right });
+    const height = 4 - rippleDip(i, lit, options.wave);
+    cells.push({ ch: (right ? FULL : LEFT)[height]!, fg: left, bg: options.bg });
   }
   return cells;
 }

@@ -16,7 +16,7 @@ import { deletesForGood, type Culprit } from "../core/browse";
 import { classify, shortAge, type Verdict } from "../core/classify";
 import { capacity, gb, size, tilde } from "../core/format";
 import type { Item } from "../core/scan";
-import { barCells, diskSegments, ease } from "./bar";
+import { diskSegments, dotCells, ease, type Cell } from "./bar";
 import { MAX_ROWS, type AppState, type Store } from "./store";
 
 // One monospace grid. Hierarchy comes from color and weight only; no borders.
@@ -30,7 +30,6 @@ const mix = (a: Rgb, b: Rgb, t: number): Rgb => [
 ];
 
 const BG: Rgb = [0, 0, 0];
-const TRACK: Rgb = [28, 28, 28];
 const FG = "#e6e6e6";
 const SOFT = "#b5b5b5";
 const MUTED = "#8c8c8c";
@@ -211,7 +210,7 @@ function useAppear(key: string, ms = 350): number {
 
 // ---- bars -------------------------------------------------------------------------
 
-function cellsToChunks(cells: ReturnType<typeof barCells>): Chunk[] {
+function cellsToChunks(cells: Cell[]): Chunk[] {
   const chunks: Chunk[] = [];
   for (const cell of cells) {
     const fg = hex(cell.fg);
@@ -224,11 +223,26 @@ function cellsToChunks(cells: ReturnType<typeof barCells>): Chunk[] {
 }
 
 /**
- * A small bar for one row: fraction of w cells, in color, on a dark track.
+ * Dim dots under every bar, so an empty bar still shows its length.
  */
-function miniBar(fraction: number, w: number, color: Rgb): Chunk[] {
+const DOT_TRACK: Rgb = [48, 48, 48];
+
+/**
+ * A small dot bar for one row: fraction of w cells, in color. It ripples while wave is set.
+ */
+function miniBar(
+  fraction: number,
+  w: number,
+  color: Rgb,
+  wave: number | undefined = undefined,
+): Chunk[] {
   return cellsToChunks(
-    barCells([{ fraction: Math.max(0, Math.min(1, fraction)), color }], w, TRACK),
+    dotCells([{ fraction: Math.max(0, Math.min(1, fraction)), color }], w, {
+      track: DOT_TRACK,
+      trackGlyph: "⣀",
+      bg: BG,
+      wave,
+    }),
   );
 }
 
@@ -236,7 +250,7 @@ function miniBar(fraction: number, w: number, color: Rgb): Chunk[] {
  * The disk, two rows tall, one colored segment per category. Segments ease to
  * their sizes while the scan runs and as things are cleared.
  */
-function Meter({ state, w }: { state: AppState; w: number }) {
+function Meter({ state, w, frame }: { state: AppState; w: number; frame: number }) {
   const segments = diskSegments(state.scan);
   const shown = useEased(segments.map((s) => s.fraction));
   const focus = state.action?.id ?? state.selected;
@@ -244,47 +258,77 @@ function Meter({ state, w }: { state: AppState; w: number }) {
     fraction: shown[i] ?? 0,
     color: s.id === focus || state.scan.phase === "scanning" ? s.color : mix(s.color, BG, 0.35),
   }));
-  const chunks = cellsToChunks(barCells(placed, w, TRACK));
+  // Two rows of dots read as one bar; the ripple runs along the top row while
+  // something is being measured or cleared.
+  const active = state.scan.phase === "scanning" || state.action !== null;
+  const top = cellsToChunks(
+    dotCells(placed, w, {
+      track: DOT_TRACK,
+      trackGlyph: " ",
+      bg: BG,
+      wave: active ? frame : undefined,
+    }),
+  );
+  const bottom = cellsToChunks(
+    dotCells(placed, w, { track: DOT_TRACK, trackGlyph: "⣀", bg: BG, wave: undefined }),
+  );
   return (
     <box flexDirection="column">
-      <Line w={w} chunks={chunks} />
-      <Line w={w} chunks={chunks} />
+      <Line w={w} chunks={top} />
+      <Line w={w} chunks={bottom} />
     </box>
   );
 }
 
 // ---- header ---------------------------------------------------------------------
 
+/**
+ * Cuts text from the left to at most w columns, so the end of a path stays visible.
+ */
+function truncLeft(text: string, w: number): string {
+  if (w <= 0) return "";
+  if (width(text) <= w) return text;
+  const parts = [...segmenter.segment(text)].map((s) => s.segment);
+  let out = "";
+  let used = 0;
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const sw = width(parts[i]!);
+    if (used + sw > w - 1) break;
+    out = parts[i] + out;
+    used += sw;
+  }
+  return "…" + out;
+}
+
 function TopLine({ state, w, frame }: { state: AppState; w: number; frame: number }) {
   const { scan, action } = state;
   const spin = SPINNER[frame % SPINNER.length]!;
-  let right: Chunk[];
+  // The status sits flush right and never moves; the path to its left grows and shrinks.
+  let path = "";
+  let status: Chunk[];
   if (action) {
-    right = [
-      k(spin + " ", hex(CATEGORY[action.id].color)),
-      k(ACTION[action.id].doing, hex(CATEGORY[action.id].color)),
-      k(`  ${size(action.freed)}`, FG, true),
+    const color = hex(CATEGORY[action.id].color);
+    path = tilde(action.current);
+    status = [
+      k(`${size(action.freed)}`, FG, true),
       k(action.total > 0 ? `  ${action.done}/${action.total}` : "", MUTED),
-      k(`  ${tilde(action.current)}`, FAINT),
+      k(`  ${spin} `, color),
+      k(ACTION[action.id].doing, color),
     ];
   } else if (scan.phase === "scanning") {
-    right = [k(spin + " ", GREEN), k("measuring  ", FG), k(tilde(scan.current), FAINT)];
+    path = tilde(scan.current);
+    status = [k(`${spin} `, GREEN), k("measuring", FG)];
   } else if (scan.blocked.length > 0) {
-    right = [k(`${scan.blocked.length} folders unreadable · grant Full Disk Access`, FAINT)];
+    status = [k(`${scan.blocked.length} folders unreadable · grant Full Disk Access`, FAINT)];
   } else {
-    right = [k("scan complete", FAINT)];
+    status = [k("scan complete", FAINT)];
   }
-  const maxRight = Math.max(10, w - 30);
-  const rightW = Math.min(
-    maxRight,
-    right.reduce((sum, c) => sum + width(c.t), 0),
-  );
+  const statusW = status.reduce((sum, c) => sum + width(c.t), 0);
+  const pathW = Math.max(0, w - 30 - statusW - 2);
+  const shown = truncLeft(path, pathW);
+  const right = shown ? [k(shown, FAINT), k("  "), ...status] : status;
   return (
-    <Split
-      w={w}
-      left={[k("fix-storage", FG, true), k("  Macintosh HD", FAINT)]}
-      right={fitChunks(right, rightW)}
-    />
+    <Split w={w} left={[k("fix-storage", FG, true), k("  Macintosh HD", FAINT)]} right={right} />
   );
 }
 
@@ -347,7 +391,16 @@ function CategoryLine({
         k("■ ", hex(color)),
         k(padEnd(category.name, 13), selected ? FG : SOFT, selected),
         k(padStart(gb(bytes), 9) + "  ", selected ? FG : MUTED),
-        ...(sw >= 44 ? miniBar(bytes / largest, 14, color) : []),
+        ...(sw >= 44
+          ? miniBar(
+              bytes / largest,
+              14,
+              color,
+              state.scan.phase === "scanning" || clearing
+                ? frame + category.id.length * 3
+                : undefined,
+            )
+          : []),
       ]}
     />
   );
@@ -856,7 +909,7 @@ export function App({ store, onQuit }: { store: Store; onQuit: () => void }) {
           ]}
         />
       ) : null}
-      <Meter state={state} w={w} />
+      <Meter state={state} w={w} frame={frame} />
       <Line w={w} chunks={[]} />
       <box flexDirection="row" height={mainH} gap={3}>
         <Categories state={state} store={store} frame={frame} h={mainH} sw={sw} />
