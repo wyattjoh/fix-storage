@@ -168,6 +168,19 @@ async function cpuTime(pid: number): Promise<string> {
 }
 
 /**
+ * Told about every dust process as it starts and ends, so a host can kill
+ * them even when it cannot reach this module (it runs in a worker).
+ */
+let childWatcher: ((pid: number, alive: boolean) => void) | undefined;
+
+/**
+ * Sets the function told about dust processes starting and ending.
+ */
+export function watchChildren(watcher: (pid: number, alive: boolean) => void): void {
+  childWatcher = watcher;
+}
+
+/**
  * dust is multi-threaded and the scan runs several at once, so each gets a share of the cores.
  */
 const THREADS = String(Math.max(2, Math.floor(availableParallelism() / 3)));
@@ -186,6 +199,7 @@ export async function dust(
     { stdout: "pipe", stderr: "pipe" },
   );
   children.add(child);
+  childWatcher?.(child.pid, true);
   // A folder guarded by a macOS privacy prompt (Music, TV, Photos) makes the
   // walk wait for an answer that may never come. A walker that has used no CPU
   // time between two checks is waiting like that: give up on it and report the
@@ -217,6 +231,7 @@ export async function dust(
   } finally {
     clearInterval(watchdog);
     children.delete(child);
+    childWatcher?.(child.pid, false);
   }
 }
 
@@ -257,9 +272,9 @@ const DEFAULT_SCAN: ScanOptions = { concurrency: 6, throttleMs: 40 };
 export function startScan(
   roots: Root[],
   onUpdate: (snapshot: ScanSnapshot) => void,
-  options: ScanOptions = DEFAULT_SCAN,
+  options: Partial<ScanOptions> = {},
 ): ScanHandle {
-  const { concurrency, throttleMs } = options;
+  const { concurrency, throttleMs } = { ...DEFAULT_SCAN, ...options };
   const snap = emptySnapshot();
   const children: Children = new Set();
   let cancelled = false;

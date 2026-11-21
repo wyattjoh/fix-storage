@@ -21,8 +21,16 @@ import { MAX_ROWS, type AppState, type Store } from "./store";
 
 // One monospace grid. Hierarchy comes from color and weight only; no borders.
 
-const hex = ([r, g, b]: Rgb) =>
-  "#" + [r, g, b].map((v) => Math.round(v).toString(16).padStart(2, "0")).join("");
+const hexCache = new Map<number, string>();
+const hex = ([r, g, b]: Rgb) => {
+  const key = (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
+  let out = hexCache.get(key);
+  if (out === undefined) {
+    out = "#" + key.toString(16).padStart(6, "0");
+    hexCache.set(key, out);
+  }
+  return out;
+};
 const mix = (a: Rgb, b: Rgb, t: number): Rgb => [
   a[0] + (b[0] - a[0]) * t,
   a[1] + (b[1] - a[1]) * t,

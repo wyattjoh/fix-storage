@@ -26,6 +26,7 @@ See [README.md](README.md) for the user-facing interface.
 | `src/core/classify.ts`   | Pure labelling: junk / unused / yours / system, and the reason               |
 | `src/core/scan.ts`       | The whole-disk scan (`dust` per folder via `Bun.spawn`), disk space          |
 | `src/core/browse.ts`     | Listing a folder, finding a culprit, last-used dates, removing one item      |
+| `src/core/measurer.ts`   | UI-side client for the measuring worker; `measure-worker.ts` is the worker   |
 | `src/core/clean.ts`      | Planning and running a category-wide clear                                   |
 | `src/plain.ts`           | `--plain` and `--json` output                                                |
 | `src/ui/store.ts`        | The app's state machine; every side effect goes through `Deps`               |
@@ -45,6 +46,7 @@ This tool deletes things. Keep these properties when changing it:
 
 - macOS only. `main.tsx` refuses to start elsewhere; do not reintroduce Linux branches piecemeal.
 - Folder sizes come from [dust](https://github.com/bootandy/dust) (`dust -j -o b -x`), never `du`, which is far slower. `main.tsx` exits with install instructions when `dust` is not on `PATH`. Every walk goes through `dust()` in `scan.ts`, which owns the stall watchdog.
+- Measuring (scan, folder listing, culprit, re-measure) runs in a worker (`measure-worker.ts`), because `Bun.spawn` blocks the thread that calls it and hundreds of dust spawns stalled rendering. The worker sends each request's updates at most every `UPDATE_MS` (200 ms), and reports every dust pid so `Measurer.stop()` can kill them synchronously on quit. `--plain` and `--json` call `startScan` directly; they have no UI to keep responsive.
 - `Store` takes a `Deps` object (`liveDeps()` for the real machine). UI tests in `test/app.test.tsx` drive real keys through `@opentui/react/test-utils` with fake deps, so they never touch the disk. Add new side effects to `Deps`, not as direct imports in the store.
 - The UI draws every row as one `<text>` of styled `<span>`s, sized and truncated by `fitChunks`, rather than relying on flex layout for columns. Widths are measured with `Bun.stringWidth`.
 - Animation only runs while something moves: `useSpinner`, `useEased` and `useAppear` pass `undefined` to `useAnimationTick` when idle, so an idle screen does not redraw.

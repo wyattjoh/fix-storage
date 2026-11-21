@@ -62,6 +62,8 @@ function fakeDeps(
     reveal: async () => {},
     confirmMs: 60_000,
     confirmGuardMs: 0,
+    forgetSizes: () => {},
+    shutdown: () => {},
     enrichMs: 60_000,
     ...overrides,
   };

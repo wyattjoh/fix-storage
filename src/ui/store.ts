@@ -14,10 +14,6 @@ import {
   cannotRemove,
   deleteForGood,
   deletesForGood,
-  findCulprit,
-  forgetAllSizes,
-  forgetSizes,
-  listFolder,
   moveToTrash,
   reveal,
   trashPathFor,
@@ -29,12 +25,11 @@ import {
   type LookUpUsage,
 } from "../core/browse";
 import { clean, plan, type CleanProgress, type CleanResult } from "../core/clean";
+import { startMeasurer } from "../core/measurer";
 import { size, tilde } from "../core/format";
 import {
   diskSpace,
   emptySnapshot,
-  measure,
-  startScan,
   unmeasuredBytes,
   type Item,
   type ScanHandle,
@@ -158,6 +153,14 @@ export interface Deps {
   deleteForGood: (path: string) => Promise<void>;
   reveal: (path: string) => Promise<void>;
   /**
+   * Drops remembered folder sizes for a path and around it, or all of them for null.
+   */
+  forgetSizes: (path: string | null) => void;
+  /**
+   * Stops all measuring for good, on the way out.
+   */
+  shutdown: () => void;
+  /**
    * How long a first press stays armed.
    */
   confirmMs: number;
@@ -176,15 +179,18 @@ export interface Deps {
  * The real machine.
  */
 export function liveDeps(home: string = homedir()): Deps {
+  const measurer = startMeasurer();
   return {
     home,
     roots: macRoots(home),
-    startScan: (roots, onUpdate) => startScan(roots, onUpdate),
-    listFolder,
-    findCulprit,
+    startScan: measurer.startScan,
+    listFolder: measurer.listFolder,
+    findCulprit: measurer.findCulprit,
     usage,
     diskSpace,
-    measure,
+    measure: measurer.measure,
+    forgetSizes: measurer.forgetSizes,
+    shutdown: measurer.stop,
     plan,
     clean,
     moveToTrash,
@@ -378,7 +384,7 @@ export class Store {
     this.listHandle?.cancel();
     this.clearConfirm();
     this.dropCulpritWork();
-    forgetAllSizes();
+    this.deps.forgetSizes(null);
     this.set({
       scan: emptySnapshot(),
       note: null,
@@ -594,7 +600,7 @@ export class Store {
     }
 
     // Anything measured above or inside it is out of date now.
-    forgetSizes(item.path);
+    this.deps.forgetSizes(item.path);
     const culprits = { ...this.state.culprits };
     for (const path of Object.keys(culprits)) {
       if (path === item.path || item.path.startsWith(path + "/")) delete culprits[path];
@@ -763,5 +769,6 @@ export class Store {
     if (this.confirmTimer) clearTimeout(this.confirmTimer);
     if (this.enrichTimer) clearTimeout(this.enrichTimer);
     this.stopped = true;
+    this.deps.shutdown();
   }
 }
