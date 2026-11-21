@@ -2,7 +2,13 @@ import { afterEach, expect, spyOn, test } from "bun:test";
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { diskSpace, emptySnapshot, startScan, type ScanSnapshot } from "../src/core/scan";
+import {
+  diskSpace,
+  emptySnapshot,
+  startScan,
+  type ScanSnapshot,
+  dustBytes,
+} from "../src/core/scan";
 import { toJson, toText } from "../src/plain";
 import { diskSegments } from "../src/ui/bar";
 
@@ -86,4 +92,10 @@ test("the meter leaves unmeasured usage occupied while the scan is in progress",
   const segments = diskSegments(scan);
   expect(segments.find((segment) => segment.id === "documents")?.fraction).toBeCloseTo(0.2);
   expect(segments.at(-1)?.fraction).toBeCloseTo(0.3);
+});
+
+test("dust sizes parse as whole bytes", () => {
+  expect(dustBytes("311296B")).toBe(311296);
+  expect(dustBytes("0B")).toBe(0);
+  expect(dustBytes("")).toBe(0);
 });

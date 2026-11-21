@@ -31,6 +31,14 @@ if (process.platform !== "darwin") {
   process.exit(1);
 }
 
+if (!Bun.which("dust")) {
+  process.stderr.write(
+    "fix-storage measures folders with dust, which is not installed.\n" +
+      "Install it with `brew install dust` or `mise use -g dust`, then run fix-storage again.\n",
+  );
+  process.exit(1);
+}
+
 if (args.length > 0 || !process.stdout.isTTY) {
   try {
     await runPlain(args.includes("--json"));

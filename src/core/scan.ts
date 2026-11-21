@@ -1,4 +1,5 @@
 import { promises as fsp } from "node:fs";
+import { availableParallelism } from "node:os";
 import { basename, join } from "node:path";
 import { CATEGORIES, type CategoryId, type Root } from "./categories";
 
@@ -130,11 +131,28 @@ const STALL_CHECK_MS = 5000;
 export type Children = Set<Bun.Subprocess>;
 
 /**
- * What du reported for one folder.
+ * What dust reported for one folder.
  */
-export interface DuResult {
+export interface FolderSize {
   bytes: number;
   denied: boolean;
+}
+
+/**
+ * One node of dust's JSON tree. With `-o b` sizes are whole bytes, like "311296B".
+ */
+export interface DustNode {
+  size: string;
+  name: string;
+  children: DustNode[];
+}
+
+/**
+ * Bytes in a dust size string.
+ */
+export function dustBytes(size: string): number {
+  const bytes = Number.parseInt(size, 10);
+  return Number.isFinite(bytes) ? bytes : 0;
 }
 
 async function cpuTime(pid: number): Promise<string> {
@@ -150,14 +168,27 @@ async function cpuTime(pid: number): Promise<string> {
 }
 
 /**
- * Disk usage of one folder via du, which is far faster than walking it in JS.
+ * dust is multi-threaded and the scan runs several at once, so each gets a share of the cores.
  */
-export async function du(path: string, children: Children): Promise<DuResult> {
-  const child = Bun.spawn(["du", "-skx", path], { stdout: "pipe", stderr: "pipe" });
+const THREADS = String(Math.max(2, Math.floor(availableParallelism() / 3)));
+
+/**
+ * Runs dust over one folder and returns its JSON tree. Sizes are allocated
+ * blocks on this volume only (`-x`), the same measure Finder and statfs use.
+ */
+export async function dust(
+  path: string,
+  args: string[],
+  children: Children,
+): Promise<{ tree: DustNode | null; denied: boolean }> {
+  const child = Bun.spawn(
+    ["dust", "-j", "-o", "b", "-x", "-P", "--print-errors", "-T", THREADS, ...args, path],
+    { stdout: "pipe", stderr: "pipe" },
+  );
   children.add(child);
-  // A folder guarded by a macOS privacy prompt (Music, TV, Photos) makes du
-  // wait for an answer that may never come. A du that has used no CPU time
-  // between two checks is waiting like that: give up on it and report the
+  // A folder guarded by a macOS privacy prompt (Music, TV, Photos) makes the
+  // walk wait for an answer that may never come. A walker that has used no CPU
+  // time between two checks is waiting like that: give up on it and report the
   // folder as unreadable.
   let stalled = false;
   let lastCpu = "";
@@ -176,15 +207,25 @@ export async function du(path: string, children: Children): Promise<DuResult> {
       new Response(child.stderr).text(),
     ]);
     await child.exited;
-    const kb = Number.parseInt(out, 10);
-    return {
-      bytes: Number.isFinite(kb) ? kb * 1024 : 0,
-      denied: stalled || /not permitted|Permission denied/.test(err),
-    };
+    let tree: DustNode | null = null;
+    try {
+      tree = JSON.parse(out) as DustNode;
+    } catch {
+      // killed, or nothing to report
+    }
+    return { tree, denied: stalled || /permission|not permitted/i.test(err) };
   } finally {
     clearInterval(watchdog);
     children.delete(child);
   }
+}
+
+/**
+ * Disk usage of one whole folder, which dust measures far faster than walking it in JS.
+ */
+export async function folderSize(path: string, children: Children): Promise<FolderSize> {
+  const { tree, denied } = await dust(path, ["-d", "0"], children);
+  return { bytes: tree ? dustBytes(tree.size) : 0, denied };
 }
 
 interface Unit {
@@ -263,7 +304,7 @@ export function startScan(
       if (category !== "system") snap.blocked.push(path);
     };
 
-    // Lists a folder, queueing each subfolder for du and adding loose files
+    // Lists a folder, queueing each subfolder for dust and adding loose files
     // straight away. Subfolders that hold another root are opened instead of
     // measured whole, so the inner root is not counted twice.
     const expand = async (
@@ -308,7 +349,7 @@ export function startScan(
         if (!unit) return;
         snap.current = unit.path;
         emit();
-        const result = await du(unit.path, children);
+        const result = await folderSize(unit.path, children);
         if (cancelled) return;
         add(unit.category, result.bytes);
         if (result.bytes > 0)
@@ -352,7 +393,7 @@ export async function measure(category: CategoryId, roots: Root[]): Promise<numb
   let total = 0;
   for (const root of roots) {
     if (root.category !== category) continue;
-    total += (await du(root.path, children)).bytes;
+    total += (await folderSize(root.path, children)).bytes;
   }
   return total;
 }

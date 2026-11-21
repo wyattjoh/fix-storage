@@ -6,7 +6,7 @@ See what is filling your Mac's disk, find the culprit, and clear what is safe to
 bunx @wyattjoh/fix-storage
 ```
 
-No installer script, no global install, no background downloads. It needs [Bun](https://bun.sh) and macOS.
+No installer script, no global install, no background downloads. It needs macOS, [Bun](https://bun.sh) and [dust](https://github.com/bootandy/dust) (`brew install dust` or `mise use -g dust`), which measures the folders.
 
 ## What it shows
 

@@ -2,7 +2,7 @@ import { promises as fsp } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type { CategoryId, Root } from "./categories";
 import { isWhole, type Usage } from "./classify";
-import { du, type Children, type Item } from "./scan";
+import { dust, dustBytes, folderSize, type Children, type DustNode, type Item } from "./scan";
 
 /**
  * A running listing or culprit search.
@@ -43,7 +43,7 @@ export type ListFolder = (
 
 /**
  * Measures everything directly inside a folder: loose files straight away,
- * subfolders with du, a few at a time. Calls back with the list so far,
+ * subfolders with dust, a few at a time. Calls back with the list so far,
  * largest first, and once more with done = true.
  */
 export function listFolder(
@@ -85,7 +85,7 @@ export function listFolder(
       while (!cancelled && next < folders.length) {
         const folder = folders[next++];
         if (!folder) return;
-        const bytes = known.get(folder) ?? (await du(folder, children)).bytes;
+        const bytes = known.get(folder) ?? (await folderSize(folder, children)).bytes;
         if (cancelled) return;
         items.push({ path: folder, size: bytes, dir: true });
         onUpdate(sorted(), false, folder);
@@ -152,7 +152,7 @@ async function looseFiles(path: string): Promise<Item[]> {
 }
 
 /**
- * Builds a culprit from du's output: follows the biggest child down for as
+ * Builds a culprit from dust's folder sizes: follows the biggest child down for as
  * long as it holds most of its parent.
  */
 export function culpritFrom(
@@ -186,26 +186,22 @@ export function culpritFrom(
 
 /**
  * Finds where the space inside a folder actually is: measures every subfolder
- * in one du walk, then follows the biggest child down.
+ * in one dust walk, then follows the biggest child down.
  */
 export function findCulprit(path: string, onDone: (culprit: Culprit) => void): ListHandle {
   let cancelled = false;
-  const child = Bun.spawn(["du", "-kx", "-d", String(DEPTH), path], {
-    stdout: "pipe",
-    stderr: "ignore",
-  });
+  const children: Children = new Set();
 
   const run = async () => {
-    const out = await new Response(child.stdout).text();
-    await child.exited;
+    // Folders only (-D), up to DEPTH levels down; dust keeps the biggest entries.
+    const { tree } = await dust(path, ["-D", "-d", String(DEPTH), "-n", "2000"], children);
     if (cancelled) return;
     const sizes = new Map<string, number>();
-    for (const line of out.split("\n")) {
-      const tab = line.indexOf("\t");
-      if (tab < 0) continue;
-      const kb = Number.parseInt(line.slice(0, tab), 10);
-      if (Number.isFinite(kb)) sizes.set(line.slice(tab + 1), kb * 1024);
-    }
+    const visit = (node: DustNode) => {
+      sizes.set(node.name, dustBytes(node.size));
+      node.children.forEach(visit);
+    };
+    if (tree) visit(tree);
     for (const [dir, bytes] of sizes) known.set(dir, bytes);
 
     const { chain, bottom, bottomSize, kids } = culpritFrom(path, sizes);
@@ -225,7 +221,7 @@ export function findCulprit(path: string, onDone: (culprit: Culprit) => void): L
   return {
     cancel() {
       cancelled = true;
-      child.kill();
+      for (const child of children) child.kill();
     },
   };
 }

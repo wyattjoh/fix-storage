@@ -24,7 +24,7 @@ See [README.md](README.md) for the user-facing interface.
 | ------------------------ | ---------------------------------------------------------------------------- |
 | `src/core/categories.ts` | Categories, tiers, and the macOS folders (`roots`) each one is measured from |
 | `src/core/classify.ts`   | Pure labelling: junk / unused / yours / system, and the reason               |
-| `src/core/scan.ts`       | The whole-disk scan (`du` per folder via `Bun.spawn`), disk space            |
+| `src/core/scan.ts`       | The whole-disk scan (`dust` per folder via `Bun.spawn`), disk space          |
 | `src/core/browse.ts`     | Listing a folder, finding a culprit, last-used dates, removing one item      |
 | `src/core/clean.ts`      | Planning and running a category-wide clear                                   |
 | `src/plain.ts`           | `--plain` and `--json` output                                                |
@@ -44,6 +44,7 @@ This tool deletes things. Keep these properties when changing it:
 ## Conventions
 
 - macOS only. `main.tsx` refuses to start elsewhere; do not reintroduce Linux branches piecemeal.
+- Folder sizes come from [dust](https://github.com/bootandy/dust) (`dust -j -o b -x`), never `du`, which is far slower. `main.tsx` exits with install instructions when `dust` is not on `PATH`. Every walk goes through `dust()` in `scan.ts`, which owns the stall watchdog.
 - `Store` takes a `Deps` object (`liveDeps()` for the real machine). UI tests in `test/app.test.tsx` drive real keys through `@opentui/react/test-utils` with fake deps, so they never touch the disk. Add new side effects to `Deps`, not as direct imports in the store.
 - The UI draws every row as one `<text>` of styled `<span>`s, sized and truncated by `fitChunks`, rather than relying on flex layout for columns. Widths are measured with `Bun.stringWidth`.
 - Animation only runs while something moves: `useSpinner`, `useEased` and `useAppear` pass `undefined` to `useAnimationTick` when idle, so an idle screen does not redraw.
